@@ -16,15 +16,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v3
-        id: generate_token
-        with:
-          client-id: ${{ vars.CLIENT_ID }}
-          private-key: ${{ secrets.CLIENT_PRIVATE_KEY }}
-
       - uses: actions/checkout@v6
-        with:
-          token: ${{ steps.generate_token.outputs.token }}
 
       - uses: cachix/install-nix-action@v27
         with:
@@ -37,8 +29,8 @@ jobs:
         run: |
           nix develop --command treefmt
           if ! git diff --exit-code; then
-            git config user.name "${{ steps.generate_token.outputs.app-slug }}[bot]"
-            git config user.email "${{ steps.generate_token.outputs.app-slug }}[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
             git commit -m "chore: treefmt"
             git push
