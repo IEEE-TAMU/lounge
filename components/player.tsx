@@ -536,10 +536,46 @@ function SpotifyCard({
   onChanged: () => void;
 }) {
   const spotify = status?.spotify;
-  const [pending, setPending] = useState<'link' | 'disconnect' | null>(null);
+  const [pending, setPending] = useState<'link' | 'disconnect' | 'player' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playerSetup, setPlayerSetup] = useState<{
+    url: string;
+    command: string;
+  } | null>(null);
 
   if (!spotify) return null;
+
+  async function setupPlayer() {
+    setPending('player');
+    setError(null);
+
+    try {
+      const response = await fetch('/api/spotify/player-login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        command?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.url || !payload.command) {
+        throw new Error(payload.error || 'Could not start Spotify player pairing.');
+      }
+
+      setPlayerSetup({ url: payload.url, command: payload.command });
+    } catch (setupError) {
+      setError(
+        setupError instanceof Error
+          ? setupError.message
+          : 'Could not start Spotify player pairing.',
+      );
+    } finally {
+      setPending(null);
+    }
+  }
 
   async function connect() {
     setPending('link');
@@ -666,6 +702,45 @@ function SpotifyCard({
           )}
         </div>
       )}
+
+      {spotify.linked && spotify.paired === false ? (
+        <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">
+          <p className="font-medium">Spotify player pairing needed</p>
+          <p className="mt-1 text-xs text-amber-100/80">
+            The control account is linked. Pair the lounge with Spotify&apos;s official
+            client once to enable audio.
+          </p>
+          {canControl ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              onClick={() => void setupPlayer()}
+              disabled={pending !== null}
+            >
+              <Link2 className="size-3.5" />
+              {pending === 'player' ? 'Preparing…' : 'Set up Spotify player'}
+            </Button>
+          ) : null}
+          {playerSetup ? (
+            <div className="mt-3 space-y-2 text-xs">
+              <p>1. Run this on your computer and keep it open:</p>
+              <pre className="overflow-x-auto rounded-lg bg-black/30 p-2 text-[11px] text-emerald-200">
+                {playerSetup.command}
+              </pre>
+              <p>2. Open the Spotify login link and use the same Spotify account:</p>
+              <a
+                href={playerSetup.url}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all text-emerald-300 underline"
+              >
+                Open Spotify login
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {spotify.error ? (
         <p className="mt-3 text-sm text-red-300">{spotify.error}</p>

@@ -23,6 +23,7 @@ export type SpotifyStatus = {
   product?: string | null;
   deviceName?: string | null;
   deviceOnline?: boolean;
+  paired?: boolean;
   error?: string | null;
 };
 
