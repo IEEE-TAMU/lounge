@@ -24,7 +24,13 @@ export async function GET(request: NextRequest) {
   try {
     const config = await getOidcConfig();
 
-    const tokens = await authorizationCodeGrant(config, request, {
+    // Next.js behind Traefik/Cloudflare sees the internal pod URL in
+    // request.url. Build the current URL from the public redirect URI so the
+    // token request sends the same redirect_uri as the authorization request.
+    const currentUrl = new URL(serverConfig.redirectUri);
+    currentUrl.search = request.nextUrl.search;
+
+    const tokens = await authorizationCodeGrant(config, currentUrl, {
       pkceCodeVerifier: oidc.verifier,
       expectedState: oidc.state,
       expectedNonce: oidc.nonce,
