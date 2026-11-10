@@ -1,0 +1,32 @@
+allow-missing-formatter = true
+
+formatters = ["prettier", "nix"]
+
+[formatter.prettier]
+command = "npm"
+options = ["run", "format"]
+includes = [
+  "*.js",
+  "*.cjs",
+  "*.mjs",
+  "*.ts",
+  "*.tsx",
+  "*.jsx",
+  "*.json",
+  "*.md",
+  "*.css",
+  "*.scss",
+  "*.html",
+  "*.yml",
+  "*.yaml",
+  "*.svg",
+]
+excludes = ["node_modules/**", ".next/**", "public/**"]
+priority = 0
+
+[formatter.nix]
+command = "nix"
+options = ["fmt"]
+includes = ["*.nix"]
+excludes = []
+priority = 0

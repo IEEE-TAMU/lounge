@@ -1,0 +1,12 @@
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - v*
+
+jobs:
+  publish:
+    uses: IEEE-TAMU/.github/.github/workflows/nix-docker-publish.yaml@master
+    with:
+      image-name: lounge
