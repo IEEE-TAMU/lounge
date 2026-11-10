@@ -33,23 +33,6 @@ const status: PlayerStatus = {
   ],
 };
 
-const spotifyStatus: PlayerStatus = {
-  ok: true,
-  idle: false,
-  paused: false,
-  playing: true,
-  title: 'Spotify song',
-  artist: 'Spotify artist',
-  album: 'Spotify album',
-  source: 'spotify',
-  queuePosition: 0,
-  queueCount: 2,
-  queue: [
-    { id: null, title: 'Spotify song', artist: 'Spotify artist', current: true },
-    { id: null, title: 'Next Spotify song', artist: 'Another artist' },
-  ],
-};
-
 assert.equal(formatTime(0), '0:00');
 assert.equal(formatTime(65), '1:05');
 assert.equal(formatTime(3_661), '61:01');
@@ -65,14 +48,6 @@ assert.equal(getQueueEntry(status, 3)?.title, 'Fourth song');
 assert.equal(getQueueEntry(status, 4), undefined);
 assert.equal(upcomingCount(status), 3);
 assert.equal(Math.round(progressPercent(status)), 36);
-
-assert.equal(getCurrentEntry(spotifyStatus)?.title, 'Spotify song');
-assert.deepEqual(
-  getUpcomingQueue(spotifyStatus).map((entry) => entry.title),
-  ['Next Spotify song'],
-);
-assert.equal(upcomingCount(spotifyStatus), 1);
-assert.equal(isIdle({ ...spotifyStatus, playing: false, paused: true }), false);
 
 assert.equal(isIdle(undefined), true);
 assert.equal(isIdle({ ok: true, idle: true }), true);

@@ -12,14 +12,8 @@ on `ieee-tamu-5B`, but exposes a browser UI with portal login.
   member's portal role, and stores a signed HTTP-only session cookie.
 - **Music agent**: all player requests are proxied through Next.js server routes.
   The browser never receives the agent URL or bearer token.
-- **Spotify linking**: an officer can link a shared Spotify Premium account from
-  the player UI. The browser is redirected to Spotify, then the callback route
-  forwards the authorization code to the music agent. The agent performs the
-  PKCE token exchange, persists the refresh token under `/var/lib`, and runs
-  librespot. The web app never stores Spotify credentials.
 - **Access**: any confirmed portal member can log in and view now-playing and the
-  queue. Only portal `officer` or `admin` members can control playback or
-  connect/disconnect Spotify.
+  queue. Only portal `officer` or `admin` members can control playback.
 - **Live state**: the UI polls the agent's `/status` endpoint every 3 seconds.
 
 ## Local development
@@ -37,11 +31,9 @@ nix develop --command npm install
 nix develop --command npm run dev
 ```
 
-Create an OIDC client in the portal admin UI at
-`https://portal.ieeetamu.org/admin/oidc-clients` (or your local portal) with
-redirect URI `http://localhost:3000/api/auth/callback` and scopes
-`openid profile email role`. Put the generated client ID and secret in
-`.env.local`.
+The portal dev config registers a `lounge-dev` OIDC client with redirect URI
+`http://localhost:3000/api/auth/callback`. The matching values are in
+`.env.example`.
 
 ## Environment
 
@@ -59,15 +51,16 @@ redirect URI `http://localhost:3000/api/auth/callback` and scopes
 
 ## Portal OIDC client
 
-OIDC clients are managed by portal admins at
-`https://portal.ieeetamu.org/admin/oidc-clients`. Create a client with:
+The portal provider is configured with:
 
-- Redirect URI: `https://lounge.ieeetamu.org/api/auth/callback`
-- Optional local redirect: `http://localhost:3000/api/auth/callback`
-- Scopes: `openid profile email role`
+```text
+LOUNGE_OIDC_CLIENT_ID=ieee-tamu-lounge
+LOUNGE_OIDC_CLIENT_SECRET=<secret>
+LOUNGE_OIDC_REDIRECT_URIS=https://lounge.ieeetamu.org/api/auth/callback,http://localhost:3000/api/auth/callback
+PORTAL_OIDC_ISSUER=https://portal.ieeetamu.org
+```
 
-The generated client ID and secret go into the lounge deployment. The portal
-provider exposes:
+The provider exposes:
 
 - `/.well-known/openid-configuration`
 - `/oauth/jwks`
@@ -77,42 +70,6 @@ provider exposes:
 
 It supports the authorization code flow with PKCE (S256) and RS256 ID tokens.
 The `role` claim is the portal role (`member`, `officer`, or `admin`).
-
-## Spotify linking
-
-Spotify credentials belong to the music agent, not this web app. The app only
-provides the public callback route:
-
-- `POST /api/spotify/link` — officer-only; asks the agent for a Spotify
-  authorization URL.
-- `GET /api/spotify/callback` — receives Spotify's `code`/`state`, verifies the
-  lounge session, and forwards the values to the agent.
-- `POST /api/spotify/player-login` — officer-only; starts librespot's official
-  OAuth pairing and returns the login URL plus the SSH tunnel command.
-- `POST /api/spotify/disconnect` — officer-only; clears the agent's credentials.
-
-The agent must have `SPOTIFY_ENABLED=1`, a Spotify Developer app Client ID, and
-the same redirect URI registered on that app. See `nix-cluster/README.md` for
-the host setup. No Spotify secrets are added to the Kubernetes deployment.
-For local development, run the agent with the redirect URI
-`http://localhost:3000/api/spotify/callback` and register that URI on the
-Spotify app.
-
-The **Connect Spotify** step links the Web API control account. Spotify
-Development Mode only allows the app owner plus up to five listed users, so use
-one shared Premium lounge account where possible; otherwise add each officer's
-account under **Users and Access** in the Spotify Developer Dashboard.
-
-The **Set up Spotify player** step is a separate one-time pairing because
-Spotify's Connect backend rejects tokens issued to third-party developer apps.
-The UI shows the required SSH tunnel command and a librespot login link. Run the
-tunnel, open the link, and sign in with the same Spotify account. On the lounge
-LAN, selecting **IEEE TAMU Lounge** in the Spotify app also pairs the player via
-ZeroConf.
-
-Spotify's Web API controls the queue through librespot, so the UI marks the
-Spotify queue as read-only. Use the Spotify app to reorder, remove, or clear
-Spotify tracks.
 
 ## Checks
 
@@ -133,5 +90,4 @@ nix build .#packages.x86_64-linux.docker
 
 Pushes to `master` and `v*` tags publish `ghcr.io/ieee-tamu/lounge` through the
 shared `nix-docker-publish.yaml` workflow. The Kubernetes manifests live in
-`IEEE-TAMU/cluster-infra` under `apps/lounge`. Bump the image tag in
-`lounge-deployment.yaml` when releasing the Spotify linking changes.
+`IEEE-TAMU/cluster-infra` under `apps/lounge`.
