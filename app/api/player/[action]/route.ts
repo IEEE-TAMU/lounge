@@ -21,6 +21,19 @@ const ALLOWED_ACTIONS = new Set([
   'mute',
 ]);
 
+// Volume and mute are intentionally excluded: the volume slider sends updates
+// as the user drags, and a cooldown there makes the UI feel broken.
+const COOLDOWN_ACTIONS = new Set([
+  'play',
+  'pause',
+  'resume',
+  'skip',
+  'stop',
+  'remove',
+  'move',
+  'clear',
+]);
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ action: string }> },
@@ -35,9 +48,11 @@ export async function POST(
       throw new HttpError(404, 'Unknown player action.');
     }
 
-    const cooldown = checkCooldown(user.sub, serverConfig.cooldownSeconds);
-    if (cooldown > 0) {
-      throw new HttpError(429, `Slow down a bit — try again in ${cooldown}s.`);
+    if (COOLDOWN_ACTIONS.has(action)) {
+      const cooldown = checkCooldown(user.sub, serverConfig.cooldownSeconds);
+      if (cooldown > 0) {
+        throw new HttpError(429, `Slow down a bit — try again in ${cooldown}s.`);
+      }
     }
 
     const body = await readJson(request);
