@@ -85,7 +85,7 @@ The Nix flake builds a standalone Next.js server and a Docker image:
 
 ```sh
 nix build .#packages.x86_64-linux.docker
-docker load < result
+./result | docker load
 ```
 
 Pushes to `master` and `v*` tags publish `ghcr.io/ieee-tamu/lounge` through the
