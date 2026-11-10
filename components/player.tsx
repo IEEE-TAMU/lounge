@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
+  Link2,
   ListX,
   LogOut,
   Music2,
@@ -13,6 +14,7 @@ import {
   SkipForward,
   Square,
   Trash2,
+  Unplug,
   VolumeX,
   X,
 } from 'lucide-react';
@@ -99,7 +101,16 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
         await mutate(payload as PlayerStatus, { revalidate: true });
 
         const message = SUCCESS_MESSAGES[action];
-        if (message) setToast({ tone: 'success', message });
+        if (message) {
+          const result = payload as PlayerStatus;
+          setToast({
+            tone: 'success',
+            message:
+              action === 'stop' && result.source === 'spotify'
+                ? 'Paused Spotify. Its queue is managed in the Spotify app.'
+                : message,
+          });
+        }
 
         return true;
       } catch (requestError) {
@@ -121,6 +132,30 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
     const timeout = setTimeout(() => setToast(null), 5_000);
     return () => clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('spotify');
+    if (!result) return;
+
+    const reason = params.get('reason');
+    const nextToast: Toast =
+      result === 'connected'
+        ? { tone: 'success', message: 'Spotify connected.' }
+        : { tone: 'error', message: reason || 'Spotify sign-in failed.' };
+
+    params.delete('spotify');
+    params.delete('reason');
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}`,
+    );
+
+    const timeout = setTimeout(() => setToast(nextToast), 0);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     if (volumeDraft === null) return;
@@ -207,6 +242,11 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
             act={act}
             submitPlay={submitPlay}
           />
+          <SpotifyCard
+            status={status}
+            canControl={canControl}
+            onChanged={() => void mutate()}
+          />
         </section>
 
         <QueueCard status={status} canControl={canControl} pending={pending} act={act} />
@@ -248,6 +288,8 @@ function NowPlayingCard({
   const idle = isIdle(status);
   const progress = progressPercent(status ?? { ok: true });
   const title = idle ? 'Nothing playing' : status?.title?.trim() || 'Unknown track';
+  const artist = status?.artist?.trim();
+  const album = status?.album?.trim();
 
   return (
     <Card className="overflow-hidden p-5 sm:p-6">
@@ -259,8 +301,15 @@ function NowPlayingCard({
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
             {title}
           </h2>
+          {artist ? (
+            <p className="mt-1 text-sm text-zinc-400">
+              {artist}
+              {album ? ` · ${album}` : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-none items-center gap-2">
+          {status?.source === 'spotify' ? <Badge tone="green">Spotify</Badge> : null}
           <Badge tone={idle ? 'neutral' : status?.paused ? 'amber' : 'green'}>
             {idle ? 'Idle' : status?.paused ? 'Paused' : 'Playing'}
           </Badge>
@@ -349,6 +398,7 @@ function ControlsCard({
   const paused = status?.paused === true;
   const disabled = pending !== null;
   const volumeValue = volumeDraft ?? status?.volume ?? 0;
+  const spotify = status?.source === 'spotify';
 
   return (
     <Card className="p-5 sm:p-6">
@@ -368,7 +418,7 @@ function ControlsCard({
         <Input
           value={playInput}
           onChange={(event) => setPlayInput(event.target.value)}
-          placeholder="YouTube, SoundCloud, Bandcamp link, or search text"
+          placeholder="YouTube, SoundCloud, Bandcamp, Spotify link, or search text"
           disabled={disabled}
           aria-label="Queue a track"
         />
@@ -421,27 +471,38 @@ function ControlsCard({
           </Button>
         </div>
 
-        <Button
-          variant="secondary"
-          onClick={() => void act('stop')}
-          disabled={disabled || idle}
-        >
-          <Square className="size-3.5" />
-          Stop
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => void act('clear')}
-          disabled={disabled || idle || upcomingCount(status ?? { ok: true }) === 0}
-        >
-          <ListX className="size-4" />
-          Clear queue
-        </Button>
+        {!spotify ? (
+          <Button
+            variant="secondary"
+            onClick={() => void act('stop')}
+            disabled={disabled || idle}
+          >
+            <Square className="size-3.5" />
+            Stop
+          </Button>
+        ) : null}
+        {!spotify ? (
+          <Button
+            variant="secondary"
+            onClick={() => void act('clear')}
+            disabled={disabled || idle || upcomingCount(status ?? { ok: true }) === 0}
+          >
+            <ListX className="size-4" />
+            Clear queue
+          </Button>
+        ) : null}
         <Button variant="secondary" onClick={() => void act('mute')} disabled={disabled}>
           <VolumeX className="size-4" />
           {status?.mute ? 'Unmute' : 'Mute'}
         </Button>
       </div>
+
+      {spotify ? (
+        <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-zinc-400">
+          The Spotify queue is managed in the Spotify app. Use it to reorder, remove, or
+          clear tracks.
+        </p>
+      ) : null}
 
       <div className="mt-6">
         <div className="flex items-center justify-between">
@@ -465,6 +526,155 @@ function ControlsCard({
   );
 }
 
+function SpotifyCard({
+  status,
+  canControl,
+  onChanged,
+}: {
+  status?: PlayerStatus;
+  canControl: boolean;
+  onChanged: () => void;
+}) {
+  const spotify = status?.spotify;
+  const [pending, setPending] = useState<'link' | 'disconnect' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!spotify) return null;
+
+  async function connect() {
+    setPending('link');
+    setError(null);
+
+    try {
+      const response = await fetch('/api/spotify/link', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || 'Could not start Spotify sign-in.');
+      }
+
+      window.location.assign(payload.url);
+    } catch (linkError) {
+      setError(
+        linkError instanceof Error
+          ? linkError.message
+          : 'Could not start Spotify sign-in.',
+      );
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    setPending('disconnect');
+    setError(null);
+
+    try {
+      const response = await fetch('/api/spotify/disconnect', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Could not disconnect Spotify.');
+      }
+
+      onChanged();
+    } catch (disconnectError) {
+      setError(
+        disconnectError instanceof Error
+          ? disconnectError.message
+          : 'Could not disconnect Spotify.',
+      );
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold tracking-[0.2em] text-zinc-400 uppercase">
+            Spotify
+          </h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Spotify Connect playback for the lounge.
+          </p>
+        </div>
+        <Badge tone={spotify.linked ? 'green' : 'neutral'}>
+          {spotify.linked ? 'Connected' : 'Not connected'}
+        </Badge>
+      </div>
+
+      {!spotify.configured ? (
+        <p className="mt-4 text-sm text-zinc-400">
+          Spotify is not configured on the music host yet. An admin needs to set the
+          Spotify client ID in the lounge-music NixOS module.
+        </p>
+      ) : spotify.linked ? (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-white">
+              {spotify.accountName || 'Spotify account'}
+            </p>
+            <p className="text-xs text-zinc-400">
+              {spotify.product === 'premium'
+                ? 'Premium'
+                : spotify.product
+                  ? spotify.product
+                  : '—'}
+              {spotify.deviceName ? ` · ${spotify.deviceName}` : ''}
+              {spotify.deviceOnline === false ? ' · device starting…' : ''}
+            </p>
+          </div>
+          {canControl ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void disconnect()}
+              disabled={pending !== null}
+            >
+              <Unplug className="size-3.5" />
+              {pending === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-zinc-400">
+            Connect the lounge&apos;s Spotify account to play Spotify links and control
+            the Spotify Connect device.
+          </p>
+          {canControl ? (
+            <Button onClick={() => void connect()} disabled={pending !== null}>
+              <Link2 className="size-4" />
+              {pending === 'link' ? 'Opening Spotify…' : 'Connect Spotify'}
+            </Button>
+          ) : (
+            <p className="text-xs text-zinc-500">An officer can connect Spotify.</p>
+          )}
+        </div>
+      )}
+
+      {spotify.error ? (
+        <p className="mt-3 text-sm text-red-300">{spotify.error}</p>
+      ) : null}
+      {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+    </Card>
+  );
+}
+
 function QueueCard({
   status,
   canControl,
@@ -478,16 +688,19 @@ function QueueCard({
 }) {
   const upcoming = getUpcomingQueue(status ?? { ok: true });
   const current = getCurrentEntry(status ?? { ok: true });
+  const spotify = status?.source === 'spotify';
 
   return (
     <Card className="flex min-h-[320px] flex-col p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold tracking-[0.2em] text-zinc-400 uppercase">
-            Queue
+            {spotify ? 'Spotify queue' : 'Queue'}
           </h2>
           <p className="mt-1 text-xs text-zinc-500">
-            {upcoming.length} upcoming {upcoming.length === 1 ? 'track' : 'tracks'}
+            {spotify
+              ? 'Read-only — manage it in the Spotify app.'
+              : `${upcoming.length} upcoming ${upcoming.length === 1 ? 'track' : 'tracks'}`}
           </p>
         </div>
         <Badge tone="neutral">{status?.queueCount ?? 0} total</Badge>
@@ -502,6 +715,11 @@ function QueueCard({
             <p className="mt-1 line-clamp-2 text-sm font-medium text-white">
               {current.title || 'Unknown track'}
             </p>
+            {current.artist ? (
+              <p className="mt-1 line-clamp-1 text-xs text-emerald-100/70">
+                {current.artist}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -517,6 +735,7 @@ function QueueCard({
               index={index}
               total={upcoming.length}
               canControl={canControl}
+              editable={!spotify}
               pending={pending}
               act={act}
             />
@@ -532,6 +751,7 @@ function QueueRow({
   index,
   total,
   canControl,
+  editable,
   pending,
   act,
 }: {
@@ -539,6 +759,7 @@ function QueueRow({
   index: number;
   total: number;
   canControl: boolean;
+  editable: boolean;
   pending: string | null;
   act: PlayerAction;
 }) {
@@ -550,11 +771,16 @@ function QueueRow({
       <span className="grid size-7 flex-none place-items-center rounded-lg bg-white/5 text-xs font-semibold text-zinc-400">
         {index + 1}
       </span>
-      <p className="min-w-0 flex-1 truncate text-sm text-zinc-100">
-        {entry.title?.trim() || 'Unknown track'}
-      </p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-zinc-100">
+          {entry.title?.trim() || 'Unknown track'}
+        </p>
+        {entry.artist ? (
+          <p className="truncate text-xs text-zinc-400">{entry.artist}</p>
+        ) : null}
+      </div>
 
-      {canControl ? (
+      {canControl && editable ? (
         <div className="flex flex-none items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
           <Button
             variant="ghost"
