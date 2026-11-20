@@ -49,6 +49,18 @@ export const serverConfig = {
   get printCooldownSeconds() {
     return numberFromEnv('PRINT_COOLDOWN_SECONDS', 5);
   },
+  get bambuAgentUrl() {
+    return required('BAMBU_AGENT_URL').replace(/\/+$/, '');
+  },
+  get bambuAgentToken() {
+    return process.env.BAMBU_AGENT_TOKEN?.trim() || undefined;
+  },
+  get bambuMaxFileBytes() {
+    return numberFromEnv('BAMBU_MAX_FILE_MB', 25) * 1024 * 1024;
+  },
+  get bambuCooldownSeconds() {
+    return numberFromEnv('BAMBU_COOLDOWN_SECONDS', 10);
+  },
   get cooldownSeconds() {
     return numberFromEnv('PLAYER_COOLDOWN_SECONDS', 3);
   },

@@ -1,9 +1,9 @@
 # IEEE TAMU Lounge
 
 Web app for the IEEE TAMU officer lounge. It is the web equivalent of the
-Discord bot's lounge music commands and printer commands: it calls the same
-`lounge-music` and `print-agent` HTTP agents on `ieee-tamu-5B`, but exposes a
-browser UI with portal login.
+Discord bot's lounge music, printer, and 3D printer commands: it calls the same
+`lounge-music`, `print-agent`, and `bambu-printer-agent` HTTP agents on
+`ieee-tamu-5B`, but exposes a browser UI with portal login.
 
 ## Architecture
 
@@ -15,11 +15,14 @@ browser UI with portal login.
   The browser never receives the agent URL or bearer token.
 - **Print agent**: print uploads, printer status, and job cancellation are also
   proxied through Next.js. The browser never talks to the print agent directly.
+- **3D printer agent**: `.gcode.3mf` uploads, X2D status, the bed camera, and
+  stop commands are proxied through Next.js. The browser never talks to the
+  Bambu agent directly.
 - **Access**: officer-only. The portal login callback rejects anyone who is not a
   portal `officer` or `admin`, every page and API route re-checks the session
   role, and members cannot view the lounge at all.
-- **Live state**: the player polls `/status` every 3 seconds; the printer polls
-  every 10 seconds.
+- **Live state**: the player polls `/status` every 3 seconds, the printer every
+  10 seconds, and the 3D printer every 5 seconds.
 
 ## Local development
 
@@ -53,9 +56,13 @@ The portal dev config registers a `lounge-dev` OIDC client with redirect URI
 | `MUSIC_AGENT_TOKEN`         | no       | Bearer token if the agent has `tokenFile` enabled   |
 | `PRINT_AGENT_URL`           | yes      | Lounge print agent base URL                         |
 | `PRINT_AGENT_TOKEN`         | no       | Bearer token if the print agent has `tokenFile` set |
+| `BAMBU_AGENT_URL`           | yes      | Bambu Lab X2D agent base URL                        |
+| `BAMBU_AGENT_TOKEN`         | no       | Bearer token if the X2D agent has `tokenFile` set   |
 | `PLAYER_COOLDOWN_SECONDS`   | no       | Per-user music action cooldown, default `3`         |
 | `PRINT_COOLDOWN_SECONDS`    | no       | Per-user print cooldown, default `5`                |
 | `PRINT_MAX_FILE_MB`         | no       | Maximum print upload size, default `10`             |
+| `BAMBU_COOLDOWN_SECONDS`    | no       | Per-user 3D print cooldown, default `10`            |
+| `BAMBU_MAX_FILE_MB`         | no       | Maximum 3D print upload size, default `25`          |
 | `SESSION_MAX_AGE_SECONDS`   | no       | Session lifetime, default `28800` (8 hours)         |
 
 ## Printing
@@ -71,6 +78,24 @@ The `/print` page mirrors the Discord bot's `/print`, `/print-status`, and
 | `POST /api/print/cancel` | `POST /cancel`    |
 
 All three routes require an officer or admin session. The print agent itself is
+documented in `nix-cluster/README.md`.
+
+## 3D printing
+
+The `/3dprint` page mirrors the Discord bot's `/3dprint`, `/3dprint-status`, and
+`/3dprint-stop` commands. It accepts pre-sliced `.gcode.3mf` files, up to 25 MB,
+with plate selection, optional filament mapping, and bed/flow/vibration
+calibration, timelapse, and upload-only options. The page also shows the X2D
+status, AMS filament slots, and a bed camera snapshot.
+
+| Lounge route                | Bambu agent route |
+| --------------------------- | ----------------- |
+| `POST /api/print3d`         | `POST /print`     |
+| `GET /api/print3d/status`   | `GET /status`     |
+| `GET /api/print3d/snapshot` | `GET /snapshot`   |
+| `POST /api/print3d/stop`    | `POST /stop`      |
+
+All four routes require an officer or admin session. The Bambu agent itself is
 documented in `nix-cluster/README.md`.
 
 ## Portal OIDC client

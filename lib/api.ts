@@ -50,7 +50,10 @@ export function errorResponse(error: unknown): NextResponse {
   }
 
   if (error instanceof AgentError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json(
+      { error: error.message, ...error.details },
+      { status: error.status },
+    );
   }
 
   console.error('Unhandled API error:', error);

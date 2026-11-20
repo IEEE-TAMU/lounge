@@ -1,4 +1,4 @@
-import { LogOut, Music2, Printer } from 'lucide-react';
+import { Box, LogOut, Music2, Printer } from 'lucide-react';
 import Link from 'next/link';
 
 import { roleLabel } from '@/lib/roles';
@@ -7,24 +7,23 @@ import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui';
 
-type Page = 'music' | 'print';
+type Page = 'music' | 'print' | 'print3d';
 
 const LINKS: { href: string; label: string; page: Page; icon: typeof Music2 }[] = [
   { href: '/', label: 'Music', page: 'music', icon: Music2 },
   { href: '/print', label: 'Print', page: 'print', icon: Printer },
+  { href: '/3dprint', label: '3D Print', page: 'print3d', icon: Box },
 ];
 
 export function AppHeader({ user, active }: { user: SessionUser; active: Page }) {
+  const ActiveIcon = LINKS.find((link) => link.page === active)?.icon ?? Music2;
+
   return (
     <header className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-xl bg-emerald-400 text-emerald-950 shadow-lg shadow-emerald-400/20">
-            {active === 'print' ? (
-              <Printer className="size-5" />
-            ) : (
-              <Music2 className="size-5" />
-            )}
+            <ActiveIcon className="size-5" />
           </div>
           <div>
             <p className="text-xs font-medium tracking-[0.2em] text-emerald-300/80 uppercase">
