@@ -1,8 +1,9 @@
 # IEEE TAMU Lounge
 
 Web app for the IEEE TAMU officer lounge. It is the web equivalent of the
-Discord bot's lounge music commands: it calls the same `lounge-music` HTTP agent
-on `ieee-tamu-5B`, but exposes a browser UI with portal login.
+Discord bot's lounge music commands and printer commands: it calls the same
+`lounge-music` and `print-agent` HTTP agents on `ieee-tamu-5B`, but exposes a
+browser UI with portal login.
 
 ## Architecture
 
@@ -12,9 +13,13 @@ on `ieee-tamu-5B`, but exposes a browser UI with portal login.
   member's portal role, and stores a signed HTTP-only session cookie.
 - **Music agent**: all player requests are proxied through Next.js server routes.
   The browser never receives the agent URL or bearer token.
-- **Access**: any confirmed portal member can log in and view now-playing and the
-  queue. Only portal `officer` or `admin` members can control playback.
-- **Live state**: the UI polls the agent's `/status` endpoint every 3 seconds.
+- **Print agent**: print uploads, printer status, and job cancellation are also
+  proxied through Next.js. The browser never talks to the print agent directly.
+- **Access**: officer-only. The portal login callback rejects anyone who is not a
+  portal `officer` or `admin`, every page and API route re-checks the session
+  role, and members cannot view the lounge at all.
+- **Live state**: the player polls `/status` every 3 seconds; the printer polls
+  every 10 seconds.
 
 ## Local development
 
@@ -46,8 +51,27 @@ The portal dev config registers a `lounge-dev` OIDC client with redirect URI
 | `SESSION_SECRET`            | yes      | HMAC secret for the lounge session cookie           |
 | `MUSIC_AGENT_URL`           | yes      | Lounge music agent base URL                         |
 | `MUSIC_AGENT_TOKEN`         | no       | Bearer token if the agent has `tokenFile` enabled   |
-| `PLAYER_COOLDOWN_SECONDS`   | no       | Per-user action cooldown, default `3`               |
+| `PRINT_AGENT_URL`           | yes      | Lounge print agent base URL                         |
+| `PRINT_AGENT_TOKEN`         | no       | Bearer token if the print agent has `tokenFile` set |
+| `PLAYER_COOLDOWN_SECONDS`   | no       | Per-user music action cooldown, default `3`         |
+| `PRINT_COOLDOWN_SECONDS`    | no       | Per-user print cooldown, default `5`                |
+| `PRINT_MAX_FILE_MB`         | no       | Maximum print upload size, default `10`             |
 | `SESSION_MAX_AGE_SECONDS`   | no       | Session lifetime, default `28800` (8 hours)         |
+
+## Printing
+
+The `/print` page mirrors the Discord bot's `/print`, `/print-status`, and
+`/print-cancel` commands. It accepts PDF, PNG, JPEG, and plain-text files, up to
+20 copies and an optional page range such as `1-3,5`.
+
+| Lounge route             | Print agent route |
+| ------------------------ | ----------------- |
+| `POST /api/print`        | `POST /print`     |
+| `GET /api/print/status`  | `GET /status`     |
+| `POST /api/print/cancel` | `POST /cancel`    |
+
+All three routes require an officer or admin session. The print agent itself is
+documented in `nix-cluster/README.md`.
 
 ## Portal OIDC client
 

@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
 
-import { getSession } from '@/lib/auth';
+import { errorResponse, requireOfficer } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const user = await getSession();
-
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  try {
+    const user = await requireOfficer();
+    return NextResponse.json({ user });
+  } catch (error) {
+    return errorResponse(error);
   }
-
-  return NextResponse.json({ user });
 }

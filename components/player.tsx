@@ -5,8 +5,6 @@ import {
   ArrowDown,
   ArrowUp,
   ListX,
-  LogOut,
-  Music2,
   Pause,
   Play,
   RefreshCw,
@@ -19,7 +17,6 @@ import {
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import useSWR from 'swr';
 
-import { roleLabel } from '@/lib/roles';
 import {
   formatTime,
   getCurrentEntry,
@@ -31,6 +28,7 @@ import {
 import type { PlayerStatus, QueueEntry, SessionUser } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+import { AppHeader } from '@/components/header';
 import { Badge, Button, Card, Input, Spinner } from '@/components/ui';
 
 type Toast = {
@@ -60,7 +58,7 @@ async function fetcher(url: string): Promise<PlayerStatus> {
   return payload as PlayerStatus;
 }
 
-export function Player({ user, canControl }: { user: SessionUser; canControl: boolean }) {
+export function Player({ user }: { user: SessionUser }) {
   const {
     data: status,
     error,
@@ -147,32 +145,7 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-xl bg-emerald-400 text-emerald-950 shadow-lg shadow-emerald-400/20">
-            <Music2 className="size-5" />
-          </div>
-          <div>
-            <p className="text-xs font-medium tracking-[0.2em] text-emerald-300/80 uppercase">
-              IEEE TAMU
-            </p>
-            <h1 className="text-lg font-semibold tracking-tight">Officer Lounge</h1>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
-          <div className="text-right">
-            <p className="text-sm font-medium text-white">{user.name || user.email}</p>
-            <p className="text-xs text-zinc-400">{roleLabel(user.role)}</p>
-          </div>
-          <form action="/api/auth/logout" method="post">
-            <Button type="submit" variant="secondary" size="sm">
-              <LogOut className="size-3.5" />
-              Log out
-            </Button>
-          </form>
-        </div>
-      </header>
+      <AppHeader user={user} active="music" />
 
       {error ? (
         <Card className="flex items-start gap-3 border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">
@@ -196,7 +169,6 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
           />
           <ControlsCard
             status={status}
-            canControl={canControl}
             pending={pending}
             playInput={playInput}
             setPlayInput={setPlayInput}
@@ -209,7 +181,7 @@ export function Player({ user, canControl }: { user: SessionUser; canControl: bo
           />
         </section>
 
-        <QueueCard status={status} canControl={canControl} pending={pending} act={act} />
+        <QueueCard status={status} pending={pending} act={act} />
       </main>
 
       {toast ? (
@@ -307,7 +279,6 @@ function NowPlayingCard({
 
 function ControlsCard({
   status,
-  canControl,
   pending,
   playInput,
   setPlayInput,
@@ -319,7 +290,6 @@ function ControlsCard({
   submitPlay,
 }: {
   status?: PlayerStatus;
-  canControl: boolean;
   pending: string | null;
   playInput: string;
   setPlayInput: (value: string) => void;
@@ -330,21 +300,6 @@ function ControlsCard({
   act: PlayerAction;
   submitPlay: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  if (!canControl) {
-    return (
-      <Card className="flex items-start gap-3 p-5 text-sm text-zinc-300 sm:p-6">
-        <AlertCircle className="mt-0.5 size-4 flex-none text-amber-300" />
-        <div>
-          <p className="font-medium text-white">View-only access</p>
-          <p className="mt-1 text-zinc-400">
-            Only portal officers and admins can control lounge playback. You can still
-            follow what is playing and see the queue.
-          </p>
-        </div>
-      </Card>
-    );
-  }
-
   const idle = isIdle(status);
   const paused = status?.paused === true;
   const disabled = pending !== null;
@@ -467,12 +422,10 @@ function ControlsCard({
 
 function QueueCard({
   status,
-  canControl,
   pending,
   act,
 }: {
   status?: PlayerStatus;
-  canControl: boolean;
   pending: string | null;
   act: PlayerAction;
 }) {
@@ -516,7 +469,6 @@ function QueueCard({
               entry={entry}
               index={index}
               total={upcoming.length}
-              canControl={canControl}
               pending={pending}
               act={act}
             />
@@ -531,14 +483,12 @@ function QueueRow({
   entry,
   index,
   total,
-  canControl,
   pending,
   act,
 }: {
   entry: QueueEntry;
   index: number;
   total: number;
-  canControl: boolean;
   pending: string | null;
   act: PlayerAction;
 }) {
@@ -554,37 +504,35 @@ function QueueRow({
         {entry.title?.trim() || 'Unknown track'}
       </p>
 
-      {canControl ? (
-        <div className="flex flex-none items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Move track up"
-            disabled={disabled || index === 0}
-            onClick={() => void act('move', { id: entry.id, position: index })}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Move track down"
-            disabled={disabled || index === total - 1}
-            onClick={() => void act('move', { id: entry.id, position: index + 2 })}
-          >
-            <ArrowDown className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Remove track"
-            disabled={disabled}
-            onClick={() => void act('remove', { id: entry.id })}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex flex-none items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Move track up"
+          disabled={disabled || index === 0}
+          onClick={() => void act('move', { id: entry.id, position: index })}
+        >
+          <ArrowUp className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Move track down"
+          disabled={disabled || index === total - 1}
+          onClick={() => void act('move', { id: entry.id, position: index + 2 })}
+        >
+          <ArrowDown className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Remove track"
+          disabled={disabled}
+          onClick={() => void act('remove', { id: entry.id })}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }

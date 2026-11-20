@@ -29,7 +29,7 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireOfficer(): Promise<SessionUser> {
   const user = await requireUser();
   if (!isOfficer(user)) {
-    throw new HttpError(403, 'Only portal officers and admins can control the lounge.');
+    throw new HttpError(403, 'Only portal officers and admins can use the lounge.');
   }
   return user;
 }

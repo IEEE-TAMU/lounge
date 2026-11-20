@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getSession } from '@/lib/auth';
+import { isOfficer } from '@/lib/roles';
 
 import { LoginCard } from '@/components/login-card';
 
@@ -12,7 +13,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const user = await getSession();
-  if (user) redirect('/');
+  if (isOfficer(user)) redirect('/');
 
   const { error } = await searchParams;
 

@@ -7,6 +7,13 @@ type AgentErrorPayload = {
   error?: string;
 };
 
+type AgentTarget = {
+  baseUrl: string;
+  token?: string;
+  label: string;
+  timeoutMs: number;
+};
+
 export class AgentError extends Error {
   readonly status: number;
 
@@ -17,33 +24,41 @@ export class AgentError extends Error {
   }
 }
 
-export async function callAgent<T>(path: string, init?: RequestInit): Promise<T> {
+async function callService<T>(
+  target: AgentTarget,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   const headers: Record<string, string> = {
     accept: 'application/json',
-    'content-type': 'application/json',
   };
 
-  if (serverConfig.musicAgentToken) {
-    headers.authorization = `Bearer ${serverConfig.musicAgentToken}`;
+  if (target.token) {
+    headers.authorization = `Bearer ${target.token}`;
+  }
+
+  // Raw bodies (for example print uploads) supply their own content type.
+  if (init?.body === undefined || typeof init.body === 'string') {
+    headers['content-type'] = 'application/json';
   }
 
   let response: Response;
 
   try {
-    response = await fetch(`${serverConfig.musicAgentUrl}${path}`, {
+    response = await fetch(`${target.baseUrl}${path}`, {
       ...init,
       headers: {
         ...headers,
         ...(init?.headers as Record<string, string> | undefined),
       },
       cache: 'no-store',
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(target.timeoutMs),
     });
   } catch (error) {
     const message =
       error instanceof Error && error.name === 'TimeoutError'
-        ? 'The lounge player took too long to respond.'
-        : 'Could not reach the lounge player.';
+        ? `The ${target.label} took too long to respond.`
+        : `Could not reach the ${target.label}.`;
     throw new AgentError(message, 503);
   }
 
@@ -51,10 +66,36 @@ export async function callAgent<T>(path: string, init?: RequestInit): Promise<T>
 
   if (!response.ok) {
     throw new AgentError(
-      payload.error || `Lounge player returned HTTP ${response.status}`,
+      payload.error || `The ${target.label} returned HTTP ${response.status}`,
       response.status,
     );
   }
 
   return payload;
+}
+
+export function callAgent<T>(path: string, init?: RequestInit): Promise<T> {
+  return callService<T>(
+    {
+      baseUrl: serverConfig.musicAgentUrl,
+      token: serverConfig.musicAgentToken,
+      label: 'lounge player',
+      timeoutMs: 25_000,
+    },
+    path,
+    init,
+  );
+}
+
+export function callPrintAgent<T>(path: string, init?: RequestInit): Promise<T> {
+  return callService<T>(
+    {
+      baseUrl: serverConfig.printAgentUrl,
+      token: serverConfig.printAgentToken,
+      label: 'lounge printer',
+      timeoutMs: 60_000,
+    },
+    path,
+    init,
+  );
 }

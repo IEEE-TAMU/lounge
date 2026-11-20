@@ -8,6 +8,35 @@ export type SessionUser = {
   emailVerified: boolean;
 };
 
+export type PrintJob = {
+  id?: string | null;
+  owner?: string | null;
+  size?: string | null;
+};
+
+export type PrinterInfo = {
+  name?: string;
+  state?: string;
+  message?: string;
+};
+
+export type PrintLimits = {
+  maxFileBytes: number;
+  maxCopies: number;
+};
+
+export type PrintStatus = {
+  ok: boolean;
+  printer?: string | PrinterInfo;
+  jobs?: PrintJob[];
+  jobId?: string | null;
+  filename?: string;
+  copies?: number;
+  pages?: string | null;
+  error?: string;
+  limits?: PrintLimits;
+};
+
 export type QueueEntry = {
   id?: number | null;
   title?: string | null;

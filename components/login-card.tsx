@@ -6,6 +6,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   expired: 'Your login session expired. Please try again.',
   unconfirmed:
     'Please confirm your IEEE TAMU portal email address before using the lounge.',
+  forbidden:
+    'The lounge is limited to IEEE TAMU officers and admins. Ask an admin if you believe you should have access.',
   failed: 'Login failed. Please try again.',
   unavailable: 'The portal is temporarily unavailable. Please try again shortly.',
   access_denied: 'Portal login was cancelled.',
@@ -33,11 +35,11 @@ export function LoginCard({ error }: { error?: string }) {
           </div>
 
           <h2 className="mt-10 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Control the lounge speakers from anywhere.
+            Control the lounge from anywhere.
           </h2>
           <p className="mt-4 max-w-lg text-base leading-7 text-zinc-400">
-            Queue music, skip tracks, and check what is playing. Sign in with your IEEE
-            TAMU portal account to continue.
+            Queue music, skip tracks, check what is playing, and send documents to the
+            lounge printer. Sign in with your IEEE TAMU portal account to continue.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -58,8 +60,7 @@ export function LoginCard({ error }: { error?: string }) {
 
           <p className="mt-4 flex items-center gap-2 text-xs text-zinc-500">
             <ShieldCheck className="size-4 text-emerald-300/80" />
-            Any confirmed portal member can view the lounge. Only officers and admins can
-            control playback.
+            Officer-only access. Only portal officers and admins can use the lounge.
           </p>
         </div>
 
@@ -79,6 +80,10 @@ export function LoginCard({ error }: { error?: string }) {
                 body="Pause, resume, skip, reorder, and clear the upcoming queue."
               />
               <Feature
+                title="Print from the lounge"
+                body="Upload a PDF, image, or text file and send it to the lounge printer."
+              />
+              <Feature
                 title="See what is playing"
                 body="Live now-playing, progress, volume, and the full upcoming queue."
               />
@@ -91,8 +96,8 @@ export function LoginCard({ error }: { error?: string }) {
             ) : null}
 
             <p className="mt-8 border-t border-white/10 pt-5 text-xs leading-5 text-zinc-500">
-              Access is managed by the IEEE TAMU portal. If you are an officer but do not
-              see playback controls, ask an admin to check your portal role.
+              Access is managed by the IEEE TAMU portal. If you are an officer but cannot
+              sign in, ask an admin to check your portal role.
             </p>
           </div>
         </Card>

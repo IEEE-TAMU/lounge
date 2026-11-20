@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizationCodeGrant, fetchUserInfo } from 'openid-client';
 
-import { clearOidcCookies, getOidcCookies, setSessionCookie } from '@/lib/auth';
+import {
+  clearOidcCookies,
+  clearSessionCookie,
+  getOidcCookies,
+  setSessionCookie,
+} from '@/lib/auth';
 import { serverConfig } from '@/lib/config';
 import { getOidcConfig } from '@/lib/oidc';
-import { normalizeRole } from '@/lib/roles';
+import { isOfficer, normalizeRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +65,12 @@ export async function GET(request: NextRequest) {
     if (!user.emailVerified) {
       await clearOidcCookies();
       return loginError('unconfirmed');
+    }
+
+    if (!isOfficer(user)) {
+      await clearOidcCookies();
+      await clearSessionCookie();
+      return loginError('forbidden');
     }
 
     await setSessionCookie(user);

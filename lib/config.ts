@@ -37,6 +37,18 @@ export const serverConfig = {
   get musicAgentToken() {
     return process.env.MUSIC_AGENT_TOKEN?.trim() || undefined;
   },
+  get printAgentUrl() {
+    return required('PRINT_AGENT_URL').replace(/\/+$/, '');
+  },
+  get printAgentToken() {
+    return process.env.PRINT_AGENT_TOKEN?.trim() || undefined;
+  },
+  get printMaxFileBytes() {
+    return numberFromEnv('PRINT_MAX_FILE_MB', 10) * 1024 * 1024;
+  },
+  get printCooldownSeconds() {
+    return numberFromEnv('PRINT_COOLDOWN_SECONDS', 5);
+  },
   get cooldownSeconds() {
     return numberFromEnv('PLAYER_COOLDOWN_SECONDS', 3);
   },

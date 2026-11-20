@@ -14,5 +14,9 @@ export default async function HomePage() {
     redirect('/login');
   }
 
-  return <Player user={user} canControl={isOfficer(user)} />;
+  if (!isOfficer(user)) {
+    redirect('/login?error=forbidden');
+  }
+
+  return <Player user={user} />;
 }
