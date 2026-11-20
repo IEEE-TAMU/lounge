@@ -50,12 +50,17 @@ export async function POST(request: NextRequest) {
     }
 
     const normalized = filamentMap.map((value) => {
-      if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 255) {
+      if (
+        typeof value === 'number' &&
+        Number.isInteger(value) &&
+        value >= 0 &&
+        value <= 255
+      ) {
         return value;
       }
       if (
-        typeof value === 'string'
-        && /^(ext|external|ext1|ext2|\d{1,3})$/i.test(value.trim())
+        typeof value === 'string' &&
+        /^(ext|external|ext1|ext2|\d{1,3})$/i.test(value.trim())
       ) {
         return value.trim().toLowerCase();
       }

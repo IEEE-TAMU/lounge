@@ -3,11 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callBambuAgent } from '@/lib/agent';
 import { assertSameOrigin, errorResponse, HttpError, requireOfficer } from '@/lib/api';
 import { serverConfig } from '@/lib/config';
-import {
-  formatBytes,
-  isGcode3mfFile,
-  type Print3dUploadResult,
-} from '@/lib/print3d';
+import { formatBytes, isGcode3mfFile, type Print3dUploadResult } from '@/lib/print3d';
 import { checkCooldown } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
