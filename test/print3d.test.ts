@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
 import {
+  colorName,
   formatBytes,
   formatMinutes,
   formatTemp,
   isBusyState,
   isGcode3mfFile,
   isMappingError,
-  isValidFilamentMap,
   stateTone,
 } from '../lib/print3d';
 
@@ -16,13 +16,11 @@ assert.equal(isGcode3mfFile({ name: 'CUBE.GCODE.3MF' }), true);
 assert.equal(isGcode3mfFile({ name: 'cube.3mf' }), false);
 assert.equal(isGcode3mfFile({ name: 'cube.gcode.3mf.zip' }), false);
 
-assert.equal(isValidFilamentMap('1'), true);
-assert.equal(isValidFilamentMap('1,3'), true);
-assert.equal(isValidFilamentMap('ext'), true);
-assert.equal(isValidFilamentMap('1, ext'), false);
-assert.equal(isValidFilamentMap(''), false);
-assert.equal(isValidFilamentMap('1,'), false);
-assert.equal(isValidFilamentMap('1'.repeat(65)), false);
+assert.equal(colorName('#F72323'), 'Red');
+assert.equal(colorName('#161616'), 'Black');
+assert.equal(colorName('#0ACC38'), 'Green');
+assert.equal(colorName('#443089'), 'Violet');
+assert.equal(colorName(null), 'Unknown');
 
 assert.equal(formatBytes(512), '1 KB');
 assert.equal(formatBytes(2_048), '2 KB');

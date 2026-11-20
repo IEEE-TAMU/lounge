@@ -82,21 +82,32 @@ documented in `nix-cluster/README.md`.
 
 ## 3D printing
 
-The `/3dprint` page mirrors the Discord bot's `/3dprint`, `/3dprint-status`, and
-`/3dprint-stop` commands. It accepts pre-sliced `.gcode.3mf` files, up to 25 MB,
-with plate selection, optional filament mapping, and bed/flow/vibration
-calibration, timelapse, and upload-only options. The page also shows the X2D
-status, AMS filament slots, and a bed camera snapshot.
+The `/3dprint` page mirrors the Discord bot's upload → map → start flow. It
+accepts pre-sliced `.gcode.3mf` files up to 25 MB, with plate selection and
+bed/flow/vibration calibration and timelapse options.
+
+1. Upload the file. The Bambu agent stores it and returns an upload token plus
+   the sliced materials and the live AMS/external filament slots.
+2. Choose a filament for every sliced material. There is no automatic matching;
+   the UI shows the sliced materials and the available filaments side by side.
+3. Start the print. The agent builds the project mapping from the selected tray
+   IDs and sends the job.
+
+The page also shows the X2D status, AMS filament slots, and a bed camera
+snapshot.
 
 | Lounge route                | Bambu agent route |
 | --------------------------- | ----------------- |
 | `POST /api/print3d`         | `POST /print`     |
+| `POST /api/print3d/start`   | `POST /start`     |
 | `GET /api/print3d/status`   | `GET /status`     |
 | `GET /api/print3d/snapshot` | `GET /snapshot`   |
 | `POST /api/print3d/stop`    | `POST /stop`      |
 
-All four routes require an officer or admin session. The Bambu agent itself is
-documented in `nix-cluster/README.md`.
+All five routes require an officer or admin session. Uploads expire after one
+hour; if the page is refreshed before starting, upload the file again.
+Cancelling a mapping leaves the file on the printer but does not start it. The
+Bambu agent itself is documented in `nix-cluster/README.md`.
 
 ## Portal OIDC client
 

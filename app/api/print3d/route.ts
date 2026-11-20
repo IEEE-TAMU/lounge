@@ -6,8 +6,7 @@ import { serverConfig } from '@/lib/config';
 import {
   formatBytes,
   isGcode3mfFile,
-  isValidFilamentMap,
-  type Print3dResult,
+  type Print3dUploadResult,
 } from '@/lib/print3d';
 import { checkCooldown } from '@/lib/rate-limit';
 
@@ -50,8 +49,6 @@ export async function POST(request: NextRequest) {
     }
 
     const plate = parsePlate(form.get('plate'));
-    const filamentMap = parseFilamentMap(form.get('filament_map'));
-    const start = parseBoolean(form.get('start'), true);
     const bedLeveling = parseBoolean(form.get('bed_leveling'), true);
     const flowCali = parseBoolean(form.get('flow_cali'), false);
     const vibrationCali = parseBoolean(form.get('vibration_cali'), false);
@@ -68,15 +65,14 @@ export async function POST(request: NextRequest) {
     const params = new URLSearchParams({
       filename: file.name,
       plate: String(plate),
-      start: String(start),
+      start: 'false',
       bed_leveling: String(bedLeveling),
       flow_cali: String(flowCali),
       vibration_cali: String(vibrationCali),
       timelapse: String(timelapse),
     });
-    if (filamentMap) params.set('filament_map', filamentMap);
 
-    const result = await callBambuAgent<Print3dResult>(
+    const result = await callBambuAgent<Print3dUploadResult>(
       `/print?${params.toString()}`,
       {
         method: 'POST',
@@ -102,18 +98,6 @@ function parsePlate(value: FormDataEntryValue | null): number {
     throw new HttpError(400, `Plate must be a whole number between 1 and ${MAX_PLATE}.`);
   }
   return plate;
-}
-
-function parseFilamentMap(value: FormDataEntryValue | null): string | undefined {
-  if (typeof value !== 'string') return undefined;
-
-  const filamentMap = value.trim();
-  if (!filamentMap || filamentMap.toLowerCase() === 'auto') return undefined;
-
-  if (!isValidFilamentMap(filamentMap)) {
-    throw new HttpError(400, 'Filament mapping must look like 1 or 1,3.');
-  }
-  return filamentMap;
 }
 
 function parseBoolean(value: FormDataEntryValue | null, fallback: boolean): boolean {

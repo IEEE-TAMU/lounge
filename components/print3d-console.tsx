@@ -1,23 +1,23 @@
 'use client';
 
-import { AlertCircle, Camera, RefreshCw, Square, Upload, X } from 'lucide-react';
+import { AlertCircle, Camera, Play, RefreshCw, Square, Upload, X } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import useSWR from 'swr';
 
 import {
+  colorName,
   formatBytes,
   formatMinutes,
   formatTemp,
   isBusyState,
   isGcode3mfFile,
   isMappingError,
-  isValidFilamentMap,
   stateTone,
-  type FilamentMappingError,
   type FilamentSlot,
   type Print3dResult,
   type Print3dStatus,
+  type Print3dUploadResult,
 } from '@/lib/print3d';
 import type { SessionUser } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -60,21 +60,30 @@ export function Print3dConsole({ user }: { user: SessionUser }) {
   const toastTimeout = useRef<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [plate, setPlate] = useState('1');
-  const [filamentMap, setFilamentMap] = useState('');
-  const [start, setStart] = useState(true);
   const [bedLeveling, setBedLeveling] = useState(true);
   const [flowCali, setFlowCali] = useState(false);
   const [vibrationCali, setVibrationCali] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [mappingError, setMappingError] = useState<FilamentMappingError | null>(null);
+  const [upload, setUpload] = useState<Print3dUploadResult | null>(null);
+  const [mapping, setMapping] = useState<Array<number | ''>>([]);
   const [toast, setToast] = useState<Toast | null>(null);
   const [snapshotNonce, setSnapshotNonce] = useState(0);
   const [cameraError, setCameraError] = useState(false);
 
   const maxFileBytes = status?.limits?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const cameraAvailable = status?.camera?.available === true;
+  const mappingComplete =
+    upload !== null &&
+    upload.filaments.length > 0 &&
+    mapping.length === upload.filaments.length &&
+    mapping.every((value) => value !== '');
+  const printerBusy = isBusyState(status?.printer.state ?? upload?.printerState);
+  const developerModeOff =
+    status?.printer.developerMode === false || upload?.capabilities?.startPrint === false;
+  const canStart = mappingComplete && !starting && !printerBusy && !developerModeOff;
 
   useEffect(() => {
     if (!cameraAvailable) return;
@@ -113,7 +122,6 @@ export function Print3dConsole({ user }: { user: SessionUser }) {
       return;
     }
 
-    setMappingError(null);
     setFile(selected);
   }
 
@@ -144,61 +152,126 @@ export function Print3dConsole({ user }: { user: SessionUser }) {
       return;
     }
 
-    const mapping = filamentMap.trim();
-    if (mapping && mapping.toLowerCase() !== 'auto' && !isValidFilamentMap(mapping)) {
-      showToast('error', 'Filament mapping must look like 1 or 1,3.');
-      return;
-    }
-
     const form = new FormData();
     form.set('file', file);
     form.set('plate', String(plateNumber));
-    form.set('start', String(start));
     form.set('bed_leveling', String(bedLeveling));
     form.set('flow_cali', String(flowCali));
     form.set('vibration_cali', String(vibrationCali));
     form.set('timelapse', String(timelapse));
-    if (mapping && mapping.toLowerCase() !== 'auto') form.set('filament_map', mapping);
 
     setUploading(true);
-    setMappingError(null);
     try {
       const response = await fetch('/api/print3d', { method: 'POST', body: form });
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        if (isMappingError(payload)) {
-          setMappingError(payload);
-          showToast('error', payload.error || 'Filament mapping required.');
-          return;
-        }
-        throw new Error(payload.error || 'Could not send the file to the 3D printer.');
+        throw new Error(payload.error || 'Could not upload the file to the 3D printer.');
       }
 
-      const result = payload as Print3dResult;
+      const result = payload as Print3dUploadResult;
+      if (!result.uploadId) {
+        throw new Error('The 3D printer did not return an upload session.');
+      }
+
+      setUpload(result);
+      setMapping(new Array(result.filaments.length).fill(''));
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       showToast(
         'success',
-        result.uploaded
-          ? `Uploaded ${result.filename ?? file.name}. Start it from the printer touchscreen.`
-          : `Started ${result.filename ?? file.name} on ${result.printer ?? 'the X2D'}.`,
+        result.slots.length === 0
+          ? 'File uploaded, but no filament slots are reporting.'
+          : 'File uploaded. Choose a filament for each material.',
       );
-
-      setFile(null);
-      setFilamentMap('');
-      setMappingError(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-
       await mutate();
     } catch (requestError) {
       showToast(
         'error',
         requestError instanceof Error
           ? requestError.message
-          : 'Could not send the file to the 3D printer.',
+          : 'Could not upload the file to the 3D printer.',
       );
     } finally {
       setUploading(false);
     }
+  }
+
+  function updateMapping(index: number, value: number | '') {
+    setMapping((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  async function startPrint() {
+    if (!upload) return;
+    if (!mappingComplete) {
+      showToast('error', 'Choose a filament for every sliced material.');
+      return;
+    }
+
+    setStarting(true);
+    try {
+      const response = await fetch('/api/print3d/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          uploadId: upload.uploadId,
+          filamentMap: mapping.map((value) => Number(value)),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (isMappingError(payload)) {
+          setUpload((current) =>
+            current
+              ? {
+                  ...current,
+                  filaments: payload.filaments.map((filament, index) => ({
+                    index: index + 1,
+                    id: filament.id,
+                    type: filament.type,
+                    color: filament.color,
+                    grams: filament.used_grams,
+                  })),
+                  slots: payload.slots,
+                }
+              : current,
+          );
+          setMapping(new Array(payload.filaments.length).fill(''));
+          showToast('error', payload.error || 'Choose the filament mapping again.');
+          return;
+        }
+        throw new Error(payload.error || 'Could not start the 3D print.');
+      }
+
+      const result = payload as Print3dResult;
+      showToast(
+        'success',
+        `Started ${result.filename ?? upload.filename} on ${result.printer ?? 'the X2D'}.`,
+      );
+      setUpload(null);
+      setMapping([]);
+      await mutate();
+    } catch (requestError) {
+      showToast(
+        'error',
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not start the 3D print.',
+      );
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  function cancelMapping() {
+    setUpload(null);
+    setMapping([]);
+    showToast('success', 'Mapping cancelled. The uploaded file stays on the printer.');
   }
 
   async function stopPrint() {
@@ -267,29 +340,38 @@ export function Print3dConsole({ user }: { user: SessionUser }) {
         </section>
 
         <section className="flex flex-col gap-6">
-          <UploadCard
-            file={file}
-            fileInputRef={fileInputRef}
-            plate={plate}
-            filamentMap={filamentMap}
-            start={start}
-            bedLeveling={bedLeveling}
-            flowCali={flowCali}
-            vibrationCali={vibrationCali}
-            timelapse={timelapse}
-            uploading={uploading}
-            maxFileBytes={maxFileBytes}
-            onFileChange={handleFileChange}
-            onPlateChange={setPlate}
-            onFilamentMapChange={setFilamentMap}
-            onStartChange={setStart}
-            onBedLevelingChange={setBedLeveling}
-            onFlowCaliChange={setFlowCali}
-            onVibrationCaliChange={setVibrationCali}
-            onTimelapseChange={setTimelapse}
-            onSubmit={submitPrint}
-          />
-          {mappingError ? <MappingRequiredCard mappingError={mappingError} /> : null}
+          {upload ? (
+            <MappingCard
+              upload={upload}
+              mapping={mapping}
+              printerBusy={printerBusy}
+              developerModeOff={developerModeOff}
+              starting={starting}
+              canStart={canStart}
+              onMappingChange={updateMapping}
+              onStart={startPrint}
+              onCancel={cancelMapping}
+            />
+          ) : (
+            <UploadCard
+              file={file}
+              fileInputRef={fileInputRef}
+              plate={plate}
+              bedLeveling={bedLeveling}
+              flowCali={flowCali}
+              vibrationCali={vibrationCali}
+              timelapse={timelapse}
+              uploading={uploading}
+              maxFileBytes={maxFileBytes}
+              onFileChange={handleFileChange}
+              onPlateChange={setPlate}
+              onBedLevelingChange={setBedLeveling}
+              onFlowCaliChange={setFlowCali}
+              onVibrationCaliChange={setVibrationCali}
+              onTimelapseChange={setTimelapse}
+              onSubmit={submitPrint}
+            />
+          )}
           <FilamentsCard status={status} />
         </section>
       </main>
@@ -519,8 +601,6 @@ function UploadCard({
   file,
   fileInputRef,
   plate,
-  filamentMap,
-  start,
   bedLeveling,
   flowCali,
   vibrationCali,
@@ -529,8 +609,6 @@ function UploadCard({
   maxFileBytes,
   onFileChange,
   onPlateChange,
-  onFilamentMapChange,
-  onStartChange,
   onBedLevelingChange,
   onFlowCaliChange,
   onVibrationCaliChange,
@@ -540,8 +618,6 @@ function UploadCard({
   file: File | null;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   plate: string;
-  filamentMap: string;
-  start: boolean;
   bedLeveling: boolean;
   flowCali: boolean;
   vibrationCali: boolean;
@@ -550,8 +626,6 @@ function UploadCard({
   maxFileBytes: number;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onPlateChange: (value: string) => void;
-  onFilamentMapChange: (value: string) => void;
-  onStartChange: (value: boolean) => void;
   onBedLevelingChange: (value: boolean) => void;
   onFlowCaliChange: (value: boolean) => void;
   onVibrationCaliChange: (value: boolean) => void;
@@ -589,48 +663,26 @@ function UploadCard({
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label
-              htmlFor="print3d-plate"
-              className="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase"
-            >
-              Plate
-            </label>
-            <Input
-              id="print3d-plate"
-              type="number"
-              min={1}
-              max={16}
-              value={plate}
-              onChange={(event) => onPlateChange(event.target.value)}
-              disabled={uploading}
-              className="mt-2"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="print3d-map"
-              className="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase"
-            >
-              Filament map
-            </label>
-            <Input
-              id="print3d-map"
-              value={filamentMap}
-              onChange={(event) => onFilamentMapChange(event.target.value)}
-              placeholder="Auto, or 1 / 1,3 / ext"
-              maxLength={64}
-              disabled={uploading}
-              className="mt-2"
-            />
-          </div>
+        <div>
+          <label
+            htmlFor="print3d-plate"
+            className="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase"
+          >
+            Plate
+          </label>
+          <Input
+            id="print3d-plate"
+            type="number"
+            min={1}
+            max={16}
+            value={plate}
+            onChange={(event) => onPlateChange(event.target.value)}
+            disabled={uploading}
+            className="mt-2"
+          />
         </div>
 
         <div className="grid gap-2 rounded-xl border border-white/10 bg-black/20 p-4 sm:grid-cols-2">
-          <Option checked={start} disabled={uploading} onChange={onStartChange}>
-            Start after upload
-          </Option>
           <Option
             checked={bedLeveling}
             disabled={uploading}
@@ -656,11 +708,7 @@ function UploadCard({
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={uploading || !file}>
             {uploading ? <Spinner className="size-4" /> : <Upload className="size-4" />}
-            {uploading
-              ? 'Sending to printer…'
-              : start
-                ? 'Upload and start'
-                : 'Upload only'}
+            {uploading ? 'Uploading…' : 'Upload and map'}
           </Button>
           {file ? (
             <span className="truncate text-xs text-zinc-500">
@@ -671,8 +719,7 @@ function UploadCard({
 
         {uploading ? (
           <p className="text-xs text-zinc-500">
-            Uploading over the LAN and starting the job can take a few minutes. Keep this
-            tab open.
+            Uploading over the LAN can take a few minutes. Keep this tab open.
           </p>
         ) : null}
       </form>
@@ -680,34 +727,58 @@ function UploadCard({
   );
 }
 
-function MappingRequiredCard({ mappingError }: { mappingError: FilamentMappingError }) {
+function MappingCard({
+  upload,
+  mapping,
+  printerBusy,
+  developerModeOff,
+  starting,
+  canStart,
+  onMappingChange,
+  onStart,
+  onCancel,
+}: {
+  upload: Print3dUploadResult;
+  mapping: Array<number | ''>;
+  printerBusy: boolean;
+  developerModeOff: boolean;
+  starting: boolean;
+  canStart: boolean;
+  onMappingChange: (index: number, value: number | '') => void;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
   return (
-    <Card className="border-amber-400/20 bg-amber-400/[0.04] p-5 sm:p-6">
-      <div className="flex items-start gap-3">
-        <AlertCircle className="mt-0.5 size-4 flex-none text-amber-300" />
-        <div>
-          <h2 className="text-sm font-semibold text-amber-100">
-            Filament mapping required
-          </h2>
-          <p className="mt-1 text-sm text-amber-100/80">{mappingError.error}</p>
-        </div>
-      </div>
+    <Card className="p-5 sm:p-6">
+      <p className="text-xs font-medium tracking-[0.2em] text-zinc-500 uppercase">
+        New print
+      </p>
+      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+        Map filament
+      </h2>
+      <p className="mt-2 text-sm text-zinc-400">
+        Uploaded <span className="text-zinc-200">{upload.filename}</span> (plate{' '}
+        {upload.plate}). Choose a filament for every sliced material.
+      </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] tracking-wide text-zinc-500 uppercase">
-            Sliced filaments
+            Sliced materials
           </p>
           <ul className="mt-2 space-y-2 text-sm text-zinc-200">
-            {mappingError.filaments.map((filament, index) => (
+            {upload.filaments.map((filament, index) => (
               <li key={`${filament.id ?? index}-${filament.type ?? 'filament'}`}>
                 <span className="flex items-center gap-2">
                   <ColorDot color={filament.color} />
                   <span>
                     {index + 1}. {filament.type ?? 'Filament'}
                   </span>
-                  {typeof filament.used_grams === 'number' ? (
-                    <span className="text-xs text-zinc-500">{filament.used_grams} g</span>
+                  <span className="truncate text-xs text-zinc-500">
+                    {colorName(filament.color)}
+                  </span>
+                  {typeof filament.grams === 'number' ? (
+                    <span className="text-xs text-zinc-500">{filament.grams} g</span>
                   ) : null}
                 </span>
               </li>
@@ -717,31 +788,108 @@ function MappingRequiredCard({ mappingError }: { mappingError: FilamentMappingEr
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] tracking-wide text-zinc-500 uppercase">
-            Available slots
+            Available filaments
           </p>
           <ul className="mt-2 space-y-2 text-sm text-zinc-200">
-            {mappingError.slots.map((slot, index) => (
-              <li key={`${slot.globalId}-${slot.label}`}>
-                <span className="flex items-center gap-2">
-                  <ColorDot color={slot.color} />
-                  <span>
-                    {index + 1}. {slot.label}
-                  </span>
-                  <span className="truncate text-xs text-zinc-500">
-                    {slot.type ?? 'Unknown'}
-                  </span>
-                </span>
+            {upload.slots.length === 0 ? (
+              <li className="text-xs text-amber-200">
+                No AMS slots or external spool are reporting filament.
               </li>
-            ))}
+            ) : (
+              upload.slots.map((slot) => (
+                <li key={`${slot.globalId}-${slot.label}`}>
+                  <span className="flex items-center gap-2">
+                    <ColorDot color={slot.color} />
+                    <span className="truncate">{slot.label}</span>
+                    <span className="truncate text-xs text-zinc-500">
+                      {slot.type ?? 'Unknown'} · {colorName(slot.color)}
+                    </span>
+                    {typeof slot.remain === 'number' && slot.remain >= 0 ? (
+                      <span className="text-xs text-zinc-500">{slot.remain} g</span>
+                    ) : null}
+                    {slot.active ? <Badge tone="green">Active</Badge> : null}
+                    {slot.external ? <Badge tone="blue">External</Badge> : null}
+                  </span>
+                </li>
+              ))
+            )}
           </ul>
         </div>
       </div>
 
-      <p className="mt-4 text-xs leading-5 text-amber-100/80">
-        Set the filament map field to one slot per sliced filament, for example{' '}
-        <code className="rounded bg-black/30 px-1">1</code> or{' '}
-        <code className="rounded bg-black/30 px-1">1,3</code>. Use{' '}
-        <code className="rounded bg-black/30 px-1">ext</code> for the external spool.
+      <div className="mt-5 flex flex-col gap-3">
+        {upload.filaments.map((filament, index) => (
+          <div key={`${filament.id ?? index}-mapping`}>
+            <label
+              htmlFor={`print3d-map-${index}`}
+              className="text-xs font-medium tracking-[0.15em] text-zinc-500 uppercase"
+            >
+              Filament {index + 1} · {filament.type ?? 'Unknown'} ·{' '}
+              {colorName(filament.color)}
+            </label>
+            <select
+              id={`print3d-map-${index}`}
+              value={mapping[index] ?? ''}
+              onChange={(event) =>
+                onMappingChange(
+                  index,
+                  event.target.value === '' ? '' : Number(event.target.value),
+                )
+              }
+              disabled={starting}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-emerald-400/50 disabled:opacity-50"
+            >
+              <option value="">Choose a filament…</option>
+              {upload.slots.map((slot) => (
+                <option key={slot.globalId} value={slot.globalId}>
+                  {slot.label} · {slot.type ?? 'Unknown'} · {colorName(slot.color)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+
+      {developerModeOff ? (
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">
+          <AlertCircle className="mt-0.5 size-4 flex-none" />
+          <p>
+            Developer Mode is off on the printer. Enable{' '}
+            <strong>Settings → LAN Only → Developer Mode</strong> before starting.
+          </p>
+        </div>
+      ) : null}
+
+      {printerBusy ? (
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">
+          <AlertCircle className="mt-0.5 size-4 flex-none" />
+          <p>The printer is busy. You can map now and start after the current job.</p>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500">
+        Bed leveling: {upload.settings?.bedLeveling ? 'yes' : 'no'} · Flow:{' '}
+        {upload.settings?.flowCali ? 'yes' : 'no'} · Vibration:{' '}
+        {upload.settings?.vibrationCali ? 'yes' : 'no'} · Timelapse:{' '}
+        {upload.settings?.timelapse ? 'yes' : 'no'}
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2 border-t border-white/10 pt-5">
+        <Button onClick={onStart} disabled={!canStart}>
+          {starting ? <Spinner className="size-4" /> : <Play className="size-4" />}
+          Start print
+        </Button>
+        <Button variant="secondary" onClick={onCancel} disabled={starting}>
+          Cancel
+        </Button>
+        {!canStart && !printerBusy && !developerModeOff ? (
+          <p className="self-center text-xs text-zinc-500">
+            Choose a filament for every material to enable Start print.
+          </p>
+        ) : null}
+      </div>
+      <p className="mt-3 text-xs text-zinc-500">
+        This upload expires after 1 hour. Cancel leaves the file on the printer.
       </p>
     </Card>
   );
@@ -807,7 +955,7 @@ function FilamentRow({ slot }: { slot: FilamentSlot }) {
         <p className="truncate text-sm text-zinc-100">{slot.label}</p>
         <p className="mt-0.5 truncate text-xs text-zinc-500">
           {slot.type ?? 'Unknown'}
-          {slot.color ? ` · ${slot.color}` : ''}
+          {slot.color ? ` · ${colorName(slot.color)}` : ''}
           {typeof slot.remain === 'number' && slot.remain >= 0
             ? ` · ${slot.remain} g left`
             : ''}

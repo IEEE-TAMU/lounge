@@ -82,23 +82,30 @@ export type Print3dStatus = {
   limits?: Print3dLimits;
 };
 
+export type PrintFilament = {
+  index: number;
+  id?: number | null;
+  type?: string | null;
+  color?: string | null;
+  grams?: number | null;
+  slot?: string | null;
+  globalTray?: number | null;
+};
+
 export type Print3dResult = {
   ok: boolean;
   dryRun?: boolean;
   uploaded?: boolean;
   started?: boolean;
+  uploadId?: string;
   filename?: string;
   plate?: number;
   subtask?: string;
   printer?: string;
-  filaments?: Array<{
-    index: number;
-    type?: string | null;
-    color?: string | null;
-    grams?: number | null;
-    slot?: string | null;
-    globalTray?: number | null;
-  }>;
+  printerState?: string;
+  capabilities?: { startPrint?: boolean };
+  filaments?: PrintFilament[];
+  slots?: FilamentSlot[];
   warnings?: string[];
   settings?: {
     useAms?: boolean;
@@ -111,6 +118,13 @@ export type Print3dResult = {
     timelapse?: boolean;
   };
   state?: string;
+};
+
+export type Print3dUploadResult = Print3dResult & {
+  uploadId: string;
+  uploaded: true;
+  filaments: PrintFilament[];
+  slots: FilamentSlot[];
 };
 
 export type MappingFilament = {
@@ -138,9 +152,77 @@ export function isGcode3mfFile(file: { name: string }): boolean {
   return /\.gcode\.3mf$/i.test(file.name);
 }
 
-export function isValidFilamentMap(value: string): boolean {
-  if (value.length > 64) return false;
-  return /^[A-Za-z0-9]+(?:,[A-Za-z0-9]+)*$/.test(value);
+type ColorName = {
+  name: string;
+  rgb: [number, number, number];
+};
+
+const COLOR_NAMES: ColorName[] = [
+  { name: 'Red', rgb: [231, 76, 60] },
+  { name: 'Crimson', rgb: [180, 20, 50] },
+  { name: 'Orange', rgb: [243, 156, 18] },
+  { name: 'Gold', rgb: [212, 175, 55] },
+  { name: 'Yellow', rgb: [241, 196, 15] },
+  { name: 'Lime', rgb: [120, 220, 40] },
+  { name: 'Green', rgb: [46, 204, 113] },
+  { name: 'Dark Green', rgb: [20, 110, 60] },
+  { name: 'Cyan', rgb: [26, 188, 156] },
+  { name: 'Teal', rgb: [0, 128, 128] },
+  { name: 'Blue', rgb: [52, 152, 219] },
+  { name: 'Navy', rgb: [44, 62, 120] },
+  { name: 'Purple', rgb: [155, 89, 182] },
+  { name: 'Violet', rgb: [90, 60, 150] },
+  { name: 'Indigo', rgb: [75, 0, 130] },
+  { name: 'Magenta', rgb: [220, 60, 180] },
+  { name: 'Pink', rgb: [245, 150, 190] },
+  { name: 'Brown', rgb: [139, 69, 19] },
+  { name: 'Olive', rgb: [128, 128, 0] },
+  { name: 'Black', rgb: [20, 20, 20] },
+  { name: 'Gray', rgb: [128, 128, 128] },
+  { name: 'Silver', rgb: [192, 192, 192] },
+  { name: 'White', rgb: [255, 255, 255] },
+];
+
+function parseHexColor(hex: string): [number, number, number] | null {
+  const value = hex.replace(/^#/, '').trim();
+  if (!/^[0-9a-fA-F]{6}/.test(value)) return null;
+  return [
+    Number.parseInt(value.slice(0, 2), 16),
+    Number.parseInt(value.slice(2, 4), 16),
+    Number.parseInt(value.slice(4, 6), 16),
+  ];
+}
+
+function colorDistance(
+  left: [number, number, number],
+  right: [number, number, number],
+): number {
+  const redMean = (left[0] + right[0]) / 2;
+  const red = left[0] - right[0];
+  const green = left[1] - right[1];
+  const blue = left[2] - right[2];
+  return (
+    (((512 + redMean) * red * red) >> 8) +
+    4 * green * green +
+    (((767 - redMean) * blue * blue) >> 8)
+  );
+}
+
+export function colorName(hex?: string | null): string {
+  if (!hex) return 'Unknown';
+  const rgb = parseHexColor(hex);
+  if (!rgb) return hex;
+
+  let best: ColorName | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of COLOR_NAMES) {
+    const distance = colorDistance(rgb, candidate.rgb);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best?.name ?? hex;
 }
 
 export function formatBytes(bytes: number): string {
